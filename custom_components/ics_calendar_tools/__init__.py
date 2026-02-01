@@ -364,6 +364,12 @@ def _register_services(hass: HomeAssistant) -> None:
             sdt = dt_util.parse_date(start_raw) or _to_dt(start_raw).date()
             edt = dt_util.parse_date(end_raw) or _to_dt(end_raw).date()
             ev.add("dtstart", sdt)
+            # If UI gives an inclusive end date (often equal to start), convert to exclusive end (+1 day)
+            try:
+                if edt <= sdt:
+                    edt = sdt + timedelta(days=1)
+            except Exception:
+                pass
             ev.add("dtend", edt)
         else:
             # Accept ISO or "YYYY-MM-DD HH:MM:SS"
@@ -477,6 +483,7 @@ def _register_services(hass: HomeAssistant) -> None:
         new_end_s = call.data.get("end")
         new_loc = call.data.get("location")
         new_desc = call.data.get("description")
+        rrule_raw = (call.data.get("rrule") or "").strip()
 
         new_start = _to_dt(new_start_s) if new_start_s else None
         new_end = _to_dt(new_end_s) if new_end_s else None
@@ -519,6 +526,23 @@ def _register_services(hass: HomeAssistant) -> None:
                 comp["LOCATION"] = new_loc
             if new_desc is not None:
                 comp["DESCRIPTION"] = new_desc
+            # RRULE update (optional). If blank string is passed, clear RRULE.
+            if rrule_raw:
+                from icalendar import vRecur
+                rr = rrule_raw
+                if rr.upper().startswith("RRULE:"):
+                    rr = rr.split(":", 1)[1].strip()
+                try:
+                    comp["RRULE"] = vRecur.from_ical(rr)
+                except Exception as e:
+                    raise ValueError(f"Invalid RRULE: {rr}") from e
+            elif "rrule" in call.data:
+                # Explicitly provided but empty -> remove RRULE
+                try:
+                    if comp.get("RRULE") is not None:
+                        del comp["RRULE"]
+                except Exception:
+                    pass
 
             updated += 1
 
