@@ -633,9 +633,21 @@ def _register_services(hass: HomeAssistant) -> None:
 
         return {"calendar": cal_ent, "count": len(events), "events": events}
 
-    hass.services.async_register(DOMAIN, "add_event", handle_add)
-    hass.services.async_register(DOMAIN, "delete_event", handle_delete)
-    hass.services.async_register(DOMAIN, "update_event", handle_update)
+    hass.services.async_register(
+        DOMAIN,
+        "add_event",
+        handle_add,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "delete_event",
+        handle_delete,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "update_event",
+        handle_update,
+    )
     hass.services.async_register(
         DOMAIN,
         "list_events",
