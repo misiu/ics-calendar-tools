@@ -27,6 +27,28 @@ def _to_dt(value: str) -> datetime:
     return dt
 
 
+def _coerce_dt(value: Any) -> datetime:
+    """Accept a datetime object (from a datetime selector) or a string and return an aware local datetime."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        return dt_util.as_local(value)
+    return _to_dt(str(value).strip().replace(" ", "T"))
+
+
+def _coerce_date(value: Any) -> date:
+    """Accept a date/datetime object or string and return a date (for all-day events)."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()
+    d = dt_util.parse_date(s)
+    if d:
+        return d
+    return _to_dt(s.replace(" ", "T")).date()
+
+
 def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) -> str:
     """Return the Local Calendar .ics path for a calendar entity.
 
@@ -343,11 +365,11 @@ def _register_services(hass: HomeAssistant) -> None:
         desc = call.data.get("description")
         loc = call.data.get("location")
         all_day = bool(call.data.get("all_day", False))
-        start_raw = (call.data.get("start") or "").strip()
-        end_raw = (call.data.get("end") or "").strip()
+        start_val = call.data.get("start")
+        end_val = call.data.get("end")
         rrule_raw = (call.data.get("rrule") or "").strip()
 
-        if not start_raw or not end_raw:
+        if start_val is None or end_val is None:
             raise ValueError("start and end are required")
 
         path = _find_ics_path_for_calendar(hass, cal_ent)
@@ -372,9 +394,8 @@ def _register_services(hass: HomeAssistant) -> None:
             ev.add("location", str(loc))
 
         if all_day:
-            # Accept YYYY-MM-DD (or ISO date) for all-day
-            sdt = dt_util.parse_date(start_raw) or _to_dt(start_raw).date()
-            edt = dt_util.parse_date(end_raw) or _to_dt(end_raw).date()
+            sdt = _coerce_date(start_val)
+            edt = _coerce_date(end_val)
             ev.add("dtstart", sdt)
             # If UI gives an inclusive end date (often equal to start), convert to exclusive end (+1 day)
             try:
@@ -384,9 +405,8 @@ def _register_services(hass: HomeAssistant) -> None:
                 pass
             ev.add("dtend", edt)
         else:
-            # Accept ISO or "YYYY-MM-DD HH:MM:SS"
-            sdt = _to_dt(start_raw.replace(" ", "T"))
-            edt = _to_dt(end_raw.replace(" ", "T"))
+            sdt = _coerce_dt(start_val)
+            edt = _coerce_dt(end_val)
             ev.add("dtstart", sdt)
             ev.add("dtend", edt)
 
@@ -410,11 +430,11 @@ def _register_services(hass: HomeAssistant) -> None:
 
         uid = _uid_from_call_data(call.data)
         summary = call.data.get("summary")
-        start_s = call.data.get("start")
-        end_s = call.data.get("end")
+        start_val = call.data.get("start")
+        end_val = call.data.get("end")
 
-        start = _to_dt(start_s) if start_s else None
-        end = _to_dt(end_s) if end_s else None
+        start = _coerce_dt(start_val) if start_val is not None else None
+        end = _coerce_dt(end_val) if end_val is not None else None
 
         path = _find_ics_path_for_calendar(hass, cal_ent)
         before_mtime = None
@@ -491,14 +511,14 @@ def _register_services(hass: HomeAssistant) -> None:
 
         uid = _uid_from_call_data(call.data)
         new_summary = call.data.get("summary")
-        new_start_s = call.data.get("start")
-        new_end_s = call.data.get("end")
+        new_start_val = call.data.get("start")
+        new_end_val = call.data.get("end")
         new_loc = call.data.get("location")
         new_desc = call.data.get("description")
         rrule_raw = (call.data.get("rrule") or "").strip()
 
-        new_start = _to_dt(new_start_s) if new_start_s else None
-        new_end = _to_dt(new_end_s) if new_end_s else None
+        new_start = _coerce_dt(new_start_val) if new_start_val is not None else None
+        new_end = _coerce_dt(new_end_val) if new_end_val is not None else None
 
         if not uid:
             raise ValueError("Update requires uid/id/event_id (a stable identifier).")
@@ -569,12 +589,12 @@ def _register_services(hass: HomeAssistant) -> None:
         if not cal_ent:
             raise ValueError("calendar is required")
 
-        start_s = (call.data.get("start") or "").strip()
-        end_s = (call.data.get("end") or "").strip()
-        limit = int(call.data.get("limit") or 0)
+        start_val = call.data.get("start")
+        end_val = call.data.get("end")
+        limit: int = call.data.get("limit") or 0
 
-        start_filter = _to_dt(start_s) if start_s else None
-        end_filter = _to_dt(end_s) if end_s else None
+        start_filter = _coerce_dt(start_val) if start_val is not None else None
+        end_filter = _coerce_dt(end_val) if end_val is not None else None
 
         path = _find_ics_path_for_calendar(hass, cal_ent)
         cal = await hass.async_add_executor_job(_load_icalendar, path)
