@@ -17,6 +17,14 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+LOCAL_CALENDAR_STORAGE_PATH = "/config/.storage"
+LOCAL_CALENDAR_PREFIX = "local_calendar."
+ICS_EXTENSION = ".ics"
+
+
+def _local_calendar_ics_path(slug: str) -> str:
+    return f"{LOCAL_CALENDAR_STORAGE_PATH}/{LOCAL_CALENDAR_PREFIX}{slug}{ICS_EXTENSION}"
+
 
 def _to_dt(value: str) -> datetime:
     dt = dt_util.parse_datetime(value)
@@ -71,7 +79,7 @@ def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) ->
         c = str(candidate).strip()
         if not c:
             return None
-        path = f"/config/.storage/local_calendar.{c}.ics"
+        path = _local_calendar_ics_path(c)
         if path not in checked_paths:
             checked_paths.append(path)
         if os.path.exists(path):
@@ -127,19 +135,17 @@ def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) ->
                     if cfg.title:
                         candidates.append(slugify(str(cfg.title)))
                     for key in ("name", "calendar_name", "file", "filename", "path"):
-                        raw = cfg.data.get(key)
-                        if not raw:
-                            raw = cfg.options.get(key)
+                        raw = cfg.data.get(key) or cfg.options.get(key)
                         if not raw:
                             continue
                         v = str(raw).strip()
                         if not v:
                             continue
                         base = os.path.basename(v)
-                        if base.startswith("local_calendar.") and base.endswith(".ics"):
-                            candidates.append(base[len("local_calendar.") : -4])
-                        elif base.endswith(".ics"):
-                            candidates.append(base[:-4])
+                        if base.startswith(LOCAL_CALENDAR_PREFIX) and base.endswith(ICS_EXTENSION):
+                            candidates.append(base[len(LOCAL_CALENDAR_PREFIX) : -len(ICS_EXTENSION)])
+                        elif base.endswith(ICS_EXTENSION):
+                            candidates.append(base[: -len(ICS_EXTENSION)])
                         else:
                             candidates.append(slugify(v))
 
@@ -148,7 +154,7 @@ def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) ->
             if found:
                 return found
 
-    tried = ", ".join(checked_paths) if checked_paths else "/config/.storage/local_calendar.<slug>.ics"
+    tried = ", ".join(checked_paths) if checked_paths else _local_calendar_ics_path("<slug>")
     raise FileNotFoundError(
         f"Could not find Local Calendar .ics file for {calendar_entity_id}. Tried: {tried}."
     )
@@ -319,11 +325,11 @@ def _match_event(component, uid: str | None, summary: str | None, start: datetim
 
 
 def _all_local_calendar_ics_paths() -> list[str]:
-    base = "/config/.storage"
+    base = LOCAL_CALENDAR_STORAGE_PATH
     out: list[str] = []
     try:
         for name in os.listdir(base):
-            if name.startswith("local_calendar.") and name.endswith(".ics"):
+            if name.startswith(LOCAL_CALENDAR_PREFIX) and name.endswith(ICS_EXTENSION):
                 out.append(os.path.join(base, name))
     except Exception:
         pass
