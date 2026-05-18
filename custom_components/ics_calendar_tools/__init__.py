@@ -11,11 +11,19 @@ from typing import Any, Mapping
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+LOCAL_CALENDAR_STORAGE_PATH = "/config/.storage"
+LOCAL_CALENDAR_PREFIX = "local_calendar."
+ICS_EXTENSION = ".ics"
+
+
+def _local_calendar_ics_path(slug: str) -> str:
+    return f"{LOCAL_CALENDAR_STORAGE_PATH}/{LOCAL_CALENDAR_PREFIX}{slug}{ICS_EXTENSION}"
 
 
 def _to_dt(value: str) -> datetime:
@@ -63,39 +71,92 @@ def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) ->
       writing into a local 'Daisy' calendar file.
     """
     slug = calendar_entity_id.split(".", 1)[1]
-    path = f"/config/.storage/local_calendar.{slug}.ics"
-    if os.path.exists(path):
-        return path
+    checked_paths: list[str] = []
+
+    def _try_slug(candidate: str | None) -> str | None:
+        if not candidate:
+            return None
+        c = str(candidate).strip()
+        if not c:
+            return None
+        path = _local_calendar_ics_path(c)
+        if path not in checked_paths:
+            checked_paths.append(path)
+        if os.path.exists(path):
+            return path
+        return None
+
+    found = _try_slug(slug)
+    if found:
+        return found
 
     ent_reg = er.async_get(hass)
     entry = ent_reg.async_get(calendar_entity_id)
 
-    # If entity id has a numeric suffix (e.g. daisy_2), try the base slug next,
-    # but ONLY for Local Calendar entities.
-    base_slug = re.sub(r"_\d+$", "", slug)
-    if base_slug != slug and entry and entry.platform == "local_calendar":
-        path_base = f"/config/.storage/local_calendar.{base_slug}.ics"
-        if os.path.exists(path_base):
-            return path_base
+    def _is_local_calendar_entity() -> bool:
+        if not entry:
+            return False
+        if entry.platform == "local_calendar":
+            return True
+        if entry.config_entry_id:
+            cfg = hass.config_entries.async_get_entry(entry.config_entry_id)
+            if cfg and cfg.domain == "local_calendar":
+                return True
+        return False
 
-    # Only allow name/unique_id fallbacks for Local Calendar entities.
-    if entry and entry.platform == "local_calendar":
-        # Prefer unique_id if it directly maps to a file
-        if entry.unique_id:
-            p_uid = f"/config/.storage/local_calendar.{entry.unique_id}.ics"
-            if os.path.exists(p_uid):
-                return p_uid
+    if _is_local_calendar_entity():
+        # If entity id has a numeric suffix (e.g. daisy_2), try base slug.
+        base_slug = re.sub(r"_\d+$", "", slug)
+        found = _try_slug(base_slug)
+        if found:
+            return found
 
-        # Fall back to original_name -> slug (Local Calendar sometimes keeps the
-        # file name based on the original calendar name even if entity_id got _2).
-        if entry.original_name:
-            guess = entry.original_name.strip().lower().replace(" ", "_")
-            p_name = f"/config/.storage/local_calendar.{guess}.ics"
-            if os.path.exists(p_name):
-                return p_name
+        # Candidate slugs from registry/entity/config-entry metadata.
+        candidates: list[str] = []
+        if entry:
+            if entry.unique_id:
+                candidates.append(str(entry.unique_id))
+            if entry.original_name:
+                candidates.append(slugify(str(entry.original_name)))
+            if entry.name:
+                candidates.append(slugify(str(entry.name)))
 
+            state = hass.states.get(calendar_entity_id)
+            if state:
+                friendly_name = state.attributes.get("friendly_name")
+                if friendly_name:
+                    candidates.append(slugify(str(friendly_name)))
+
+            if entry.config_entry_id:
+                cfg = hass.config_entries.async_get_entry(entry.config_entry_id)
+                if cfg:
+                    if cfg.unique_id:
+                        candidates.append(str(cfg.unique_id))
+                    if cfg.title:
+                        candidates.append(slugify(str(cfg.title)))
+                    for key in ("name", "calendar_name", "file", "filename", "path"):
+                        raw = cfg.data.get(key) or cfg.options.get(key)
+                        if not raw:
+                            continue
+                        v = str(raw).strip()
+                        if not v:
+                            continue
+                        base = os.path.basename(v)
+                        if base.startswith(LOCAL_CALENDAR_PREFIX) and base.endswith(ICS_EXTENSION):
+                            candidates.append(base[len(LOCAL_CALENDAR_PREFIX) : -len(ICS_EXTENSION)])
+                        elif base.endswith(ICS_EXTENSION):
+                            candidates.append(base[: -len(ICS_EXTENSION)])
+                        else:
+                            candidates.append(slugify(v))
+
+        for candidate in candidates:
+            found = _try_slug(candidate)
+            if found:
+                return found
+
+    tried = ", ".join(checked_paths) if checked_paths else _local_calendar_ics_path("<slug>")
     raise FileNotFoundError(
-        f"Could not find Local Calendar .ics file for {calendar_entity_id}. Tried {path}."
+        f"Could not find Local Calendar .ics file for {calendar_entity_id}. Tried: {tried}."
     )
 
 
@@ -264,11 +325,11 @@ def _match_event(component, uid: str | None, summary: str | None, start: datetim
 
 
 def _all_local_calendar_ics_paths() -> list[str]:
-    base = "/config/.storage"
+    base = LOCAL_CALENDAR_STORAGE_PATH
     out: list[str] = []
     try:
         for name in os.listdir(base):
-            if name.startswith("local_calendar.") and name.endswith(".ics"):
+            if name.startswith(LOCAL_CALENDAR_PREFIX) and name.endswith(ICS_EXTENSION):
                 out.append(os.path.join(base, name))
     except Exception:
         pass
