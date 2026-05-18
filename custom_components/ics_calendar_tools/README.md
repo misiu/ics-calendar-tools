@@ -21,6 +21,7 @@ This was built to work especially well with **Week Planner Card Plus** (Skylight
 - ✅ **Add events** to a Local Calendar (`ics_calendar_tools.add_event`)
 - ✅ **Update/edit events** (title/time/details) (`ics_calendar_tools.update_event`)
 - ✅ **Delete events** reliably (UID-based) (`ics_calendar_tools.delete_event`)
+- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
 - ✅ **RRULE repeat support** for Local Calendar events (write true recurring rules into the `.ics`)
 - ✅ Automatically refreshes Local Calendar after changes (no manual restart)
 - ✅ Supports multiple Local Calendar entities

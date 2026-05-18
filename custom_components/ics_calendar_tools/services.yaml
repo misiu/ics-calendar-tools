@@ -21,17 +21,15 @@ delete_event:
       selector:
         text: {}
     start:
-      name: Start ISO time (fallback match)
-      example: "2026-01-21T07:00:00"
+      name: Start (fallback match)
       required: false
       selector:
-        text: {}
+        datetime:
     end:
-      name: End ISO time (fallback match)
-      example: "2026-01-21T07:15:00"
+      name: End (fallback match)
       required: false
       selector:
-        text: {}
+        datetime:
 
 update_event:
   name: Update event in Local Calendar .ics
@@ -54,15 +52,15 @@ update_event:
       selector:
         text: {}
     start:
-      name: New Start ISO time
+      name: New Start
       required: false
       selector:
-        text: {}
+        datetime:
     end:
-      name: New End ISO time
+      name: New End
       required: false
       selector:
-        text: {}
+        datetime:
     location:
       name: New Location
       required: false
@@ -103,12 +101,37 @@ add_event:
     start:
       required: true
       selector:
-        text:
+        datetime:
     end:
       required: true
       selector:
-        text:
+        datetime:
     rrule:
       required: false
       selector:
         text:
+
+list_events:
+  name: List events from Local Calendar .ics
+  description: Return events for a Local Calendar, including UID values.
+  fields:
+    calendar:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+    start:
+      required: false
+      selector:
+        datetime:
+    end:
+      required: false
+      selector:
+        datetime:
+    limit:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
