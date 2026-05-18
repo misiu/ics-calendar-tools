@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 import shutil
 import tempfile
 from datetime import date, datetime, timedelta
@@ -11,7 +10,7 @@ from typing import Any, Mapping
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util, slugify
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -58,106 +57,32 @@ def _coerce_date(value: Any) -> date:
 
 
 def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) -> str:
-    """Return the Local Calendar .ics path for a calendar entity.
-
-    Local Calendar stores files like:
-      /config/.storage/local_calendar.<slug>.ics
-
-    IMPORTANT:
-    - Try exact entity slug first.
-    - Only use friendly-name/unique_id/base-slug fallbacks for entities that actually
-      come from the Local Calendar integration (platform == 'local_calendar').
-      This prevents google calendars like 'calendar.daisy_2' from accidentally
-      writing into a local 'Daisy' calendar file.
-    """
-    slug = calendar_entity_id.split(".", 1)[1]
-    checked_paths: list[str] = []
-
-    def _try_slug(candidate: str | None) -> str | None:
-        if not candidate:
-            return None
-        c = str(candidate).strip()
-        if not c:
-            return None
-        path = _local_calendar_ics_path(c)
-        if path not in checked_paths:
-            checked_paths.append(path)
-        if os.path.exists(path):
-            return path
-        return None
-
-    found = _try_slug(slug)
-    if found:
-        return found
-
+    """Resolve Local Calendar .ics path using the entity's storage_key."""
     ent_reg = er.async_get(hass)
-    entry = ent_reg.async_get(calendar_entity_id)
+    entity = ent_reg.async_get(calendar_entity_id)
 
-    def _is_local_calendar_entity() -> bool:
-        if not entry:
-            return False
-        if entry.platform == "local_calendar":
-            return True
-        if entry.config_entry_id:
-            cfg = hass.config_entries.async_get_entry(entry.config_entry_id)
-            if cfg and cfg.domain == "local_calendar":
-                return True
-        return False
+    if not entity:
+        raise ValueError(f"Entity not found in registry: {calendar_entity_id}")
 
-    if _is_local_calendar_entity():
-        # If entity id has a numeric suffix (e.g. daisy_2), try base slug.
-        base_slug = re.sub(r"_\d+$", "", slug)
-        found = _try_slug(base_slug)
-        if found:
-            return found
+    if entity.platform != "local_calendar":
+        raise ValueError(f"{calendar_entity_id} is not a Local Calendar entity")
 
-        # Candidate slugs from registry/entity/config-entry metadata.
-        candidates: list[str] = []
-        if entry:
-            if entry.unique_id:
-                candidates.append(str(entry.unique_id))
-            if entry.original_name:
-                candidates.append(slugify(str(entry.original_name)))
-            if entry.name:
-                candidates.append(slugify(str(entry.name)))
+    if not entity.config_entry_id:
+        raise ValueError(f"{calendar_entity_id} has no config_entry_id")
 
-            state = hass.states.get(calendar_entity_id)
-            if state:
-                friendly_name = state.attributes.get("friendly_name")
-                if friendly_name:
-                    candidates.append(slugify(str(friendly_name)))
+    cfg = hass.config_entries.async_get_entry(entity.config_entry_id)
+    if not cfg or cfg.domain != "local_calendar":
+        raise ValueError(f"{calendar_entity_id} is not backed by local_calendar config entry")
 
-            if entry.config_entry_id:
-                cfg = hass.config_entries.async_get_entry(entry.config_entry_id)
-                if cfg:
-                    if cfg.unique_id:
-                        candidates.append(str(cfg.unique_id))
-                    if cfg.title:
-                        candidates.append(slugify(str(cfg.title)))
-                    for key in ("name", "calendar_name", "file", "filename", "path"):
-                        raw = cfg.data.get(key) or cfg.options.get(key)
-                        if not raw:
-                            continue
-                        v = str(raw).strip()
-                        if not v:
-                            continue
-                        base = os.path.basename(v)
-                        if base.startswith(LOCAL_CALENDAR_PREFIX) and base.endswith(ICS_EXTENSION):
-                            candidates.append(base[len(LOCAL_CALENDAR_PREFIX) : -len(ICS_EXTENSION)])
-                        elif base.endswith(ICS_EXTENSION):
-                            candidates.append(base[: -len(ICS_EXTENSION)])
-                        else:
-                            candidates.append(slugify(v))
+    storage_key = cfg.data.get("storage_key")
+    if not storage_key:
+        raise ValueError(f"Local Calendar config entry has no storage_key: {cfg.entry_id}")
 
-        for candidate in candidates:
-            found = _try_slug(candidate)
-            if found:
-                return found
+    path = _local_calendar_ics_path(str(storage_key))
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Local Calendar .ics file not found: {path}")
 
-    tried = ", ".join(checked_paths) if checked_paths else _local_calendar_ics_path("<slug>")
-    raise FileNotFoundError(
-        f"Could not find Local Calendar .ics file for {calendar_entity_id}. Tried: {tried}."
-    )
+    return path
 
 
 def _load_icalendar(path: str):
