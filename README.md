@@ -21,6 +21,7 @@ This was built to work especially well with **Week Planner Card Plus** (Skylight
 - ✅ **Add events** to a Local Calendar (`ics_calendar_tools.add_event`)
 - ✅ **Update/edit events** (title/time/details) (`ics_calendar_tools.update_event`)
 - ✅ **Delete events** reliably (UID-based) (`ics_calendar_tools.delete_event`)
+- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
 - ✅ **RRULE repeat support** for Local Calendar events (writes true recurring rules into the `.ics`)
 - ✅ Automatically refreshes Local Calendar after changes (no manual restart)
 - ✅ Supports multiple Local Calendar entities
@@ -155,6 +156,36 @@ service: ics_calendar_tools.delete_event
 data:
   calendar: calendar.family_calendar
   uid: "3eb61f28-8213-11f0-b1f8-0242ac110008"
+```
+
+---
+
+### `ics_calendar_tools.list_events`
+
+List events from a Local Calendar `.ics` file and return their details (including `uid`).
+
+**Fields**
+- `calendar` (required): Local Calendar entity id
+- `start` (optional): only include events that overlap this datetime/date
+- `end` (optional): only include events that start before this datetime/date
+- `limit` (optional): max number of events to return
+
+**Response**
+- `calendar`
+- `count`
+- `events[]` with `uid`, `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+
+**Example**
+```yaml
+service: ics_calendar_tools.list_events
+target:
+  entity_id: calendar.family_calendar
+data:
+  calendar: calendar.family_calendar
+  start: "2026-01-01T00:00:00"
+  end: "2026-12-31T23:59:59"
+  limit: 200
+response_variable: calendar_events
 ```
 
 ---

@@ -6,10 +6,10 @@ import os
 import re
 import shutil
 import tempfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Mapping
 
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -187,6 +187,18 @@ def _event_end_dt(component) -> datetime | None:
         except Exception:
             return None
     return None
+
+
+def _iso_ical_value(value) -> str | None:
+    """Convert iCalendar date/datetime values to ISO strings."""
+    if value is None:
+        return None
+    v = getattr(value, "dt", value)
+    if isinstance(v, datetime):
+        return dt_util.as_local(v).isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    return str(v)
 
 
 def _match_event(component, uid: str | None, summary: str | None, start: datetime | None, end: datetime | None) -> bool:
@@ -552,9 +564,64 @@ def _register_services(hass: HomeAssistant) -> None:
         await hass.async_add_executor_job(_write_icalendar_atomic, path, cal)
         await _force_refresh_after_edit(hass, cal_ent, path, before_mtime)
 
+    async def handle_list(call: ServiceCall) -> dict[str, Any]:
+        cal_ent = call.data.get("calendar")
+        if not cal_ent:
+            raise ValueError("calendar is required")
+
+        start_s = (call.data.get("start") or "").strip()
+        end_s = (call.data.get("end") or "").strip()
+        limit = int(call.data.get("limit") or 0)
+
+        start_filter = _to_dt(start_s) if start_s else None
+        end_filter = _to_dt(end_s) if end_s else None
+
+        path = _find_ics_path_for_calendar(hass, cal_ent)
+        cal = await hass.async_add_executor_job(_load_icalendar, path)
+
+        events: list[dict[str, Any]] = []
+        for comp in cal.subcomponents:
+            if comp.name != "VEVENT":
+                continue
+
+            start_dt = _dt_from_ical(comp.get("DTSTART"))
+            end_dt = _event_end_dt(comp)
+
+            if start_filter and end_dt and dt_util.as_local(end_dt) < dt_util.as_local(start_filter):
+                continue
+            if start_filter and not end_dt and start_dt and dt_util.as_local(start_dt) < dt_util.as_local(start_filter):
+                continue
+            if end_filter and start_dt and dt_util.as_local(start_dt) > dt_util.as_local(end_filter):
+                continue
+
+            start_raw = getattr(comp.get("DTSTART"), "dt", None)
+            item: dict[str, Any] = {
+                "uid": str(comp.get("UID", "")).strip(),
+                "summary": str(comp.get("SUMMARY", "")),
+                "start": _iso_ical_value(comp.get("DTSTART")),
+                "end": _iso_ical_value(comp.get("DTEND")) or (end_dt.isoformat() if end_dt else None),
+                "all_day": isinstance(start_raw, date) and not isinstance(start_raw, datetime),
+                "description": str(comp.get("DESCRIPTION", "")),
+                "location": str(comp.get("LOCATION", "")),
+                "rrule": str(comp.get("RRULE", "")),
+            }
+            events.append(item)
+
+        events.sort(key=lambda ev: ev.get("start") or "")
+        if limit > 0:
+            events = events[:limit]
+
+        return {"calendar": cal_ent, "count": len(events), "events": events}
+
     hass.services.async_register(DOMAIN, "add_event", handle_add)
     hass.services.async_register(DOMAIN, "delete_event", handle_delete)
     hass.services.async_register(DOMAIN, "update_event", handle_update)
+    hass.services.async_register(
+        DOMAIN,
+        "list_events",
+        handle_list,
+        supports_response=SupportsResponse.ONLY,
+    )
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:

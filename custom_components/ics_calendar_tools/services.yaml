@@ -112,3 +112,28 @@ add_event:
       required: false
       selector:
         text:
+
+list_events:
+  name: List events from Local Calendar .ics
+  description: Return events for a Local Calendar, including UID values.
+  fields:
+    calendar:
+      required: true
+      selector:
+        entity:
+          domain: calendar
+    start:
+      required: false
+      selector:
+        text:
+    end:
+      required: false
+      selector:
+        text:
+    limit:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
