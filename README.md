@@ -1,4 +1,4 @@
-# ICS Calendar Tools (Home Assistant) — v2.0.0
+# ICS Calendar Tools (Home Assistant) — v2.1.0
 
 **ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, and delete events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
 
