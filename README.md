@@ -11,6 +11,8 @@ This was built to work especially well with **Week Planner Card Plus** (Skylight
 ✅ Works with **Local Calendar** entities (backed by a file like:  
 `/config/.storage/local_calendar.<name>.ics`)
 
+This integration resolves the file path via the Local Calendar config entry `storage_key` (entity registry), so edits are always mapped to the correct `.ics` file.
+
 ❌ Does **not** directly create/edit recurring series on **Google calendar entities** (Google calendars are not `.ics` files on disk).  
 > Note: Your dashboard/card can still support Google recurring series via Home Assistant’s WebSocket calendar API — but that is separate from this integration’s file-based approach.
 
