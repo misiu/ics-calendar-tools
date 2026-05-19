@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -20,11 +21,84 @@ _LOGGER = logging.getLogger(__name__)
 LOCAL_CALENDAR_STORAGE_PATH = "/config/.storage"
 LOCAL_CALENDAR_PREFIX = "local_calendar."
 ICS_EXTENSION = ".ics"
+DATE_OR_DATETIME_OR_STRING = vol.Any(datetime, date, cv.string)
+UID_DATA_KEYS = (
+    "uid",
+    "UID",
+    "id",
+    "event_id",
+    "eventId",
+    "event_uid",
+    "eventUid",
+    "ical_uid",
+    "icalUid",
+)
+
+LIST_EVENTS_SCHEMA = vol.Schema(
+    {
+        vol.Required("calendar"): cv.entity_id,
+        vol.Optional("start"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("end"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("limit"): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+    }
+)
+
+ADD_EVENT_SCHEMA = vol.Schema(
+    {
+        vol.Required("calendar"): cv.entity_id,
+        vol.Required("summary"): vol.All(cv.string, vol.Length(min=1)),
+        vol.Required("all_day"): cv.boolean,
+        vol.Required("start"): DATE_OR_DATETIME_OR_STRING,
+        vol.Required("end"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("description"): cv.string,
+        vol.Optional("location"): cv.string,
+        vol.Optional("rrule"): cv.string,
+    }
+)
+
+DELETE_EVENT_SCHEMA = vol.Schema(
+    {
+        vol.Required("calendar"): cv.entity_id,
+        vol.Optional("uid"): cv.string,
+        vol.Optional("UID"): cv.string,
+        vol.Optional("id"): cv.string,
+        vol.Optional("event_id"): cv.string,
+        vol.Optional("eventId"): cv.string,
+        vol.Optional("event_uid"): cv.string,
+        vol.Optional("eventUid"): cv.string,
+        vol.Optional("ical_uid"): cv.string,
+        vol.Optional("icalUid"): cv.string,
+        vol.Optional("summary"): vol.All(cv.string, vol.Length(min=1)),
+        vol.Optional("start"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("end"): DATE_OR_DATETIME_OR_STRING,
+    }
+)
+
+UPDATE_EVENT_SCHEMA = vol.Schema(
+    {
+        vol.Required("calendar"): cv.entity_id,
+        vol.Optional("uid"): cv.string,
+        vol.Optional("UID"): cv.string,
+        vol.Optional("id"): cv.string,
+        vol.Optional("event_id"): cv.string,
+        vol.Optional("eventId"): cv.string,
+        vol.Optional("event_uid"): cv.string,
+        vol.Optional("eventUid"): cv.string,
+        vol.Optional("ical_uid"): cv.string,
+        vol.Optional("icalUid"): cv.string,
+        vol.Optional("summary"): cv.string,
+        vol.Optional("start"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("end"): DATE_OR_DATETIME_OR_STRING,
+        vol.Optional("location"): cv.string,
+        vol.Optional("description"): cv.string,
+        vol.Optional("rrule"): cv.string,
+    }
+)
 
 IMPORT_EVENTS_SCHEMA = vol.Schema(
     {
         vol.Required("calendar"): cv.entity_id,
-        vol.Required("ics"): cv.string,
+        vol.Required("ics"): vol.All(cv.string, vol.Length(min=1)),
         vol.Optional("clear_before_import", default=False): cv.boolean,
     }
 )
@@ -37,7 +111,11 @@ def _local_calendar_ics_path(slug: str) -> str:
 def _to_dt(value: str) -> datetime:
     dt = dt_util.parse_datetime(value)
     if dt is None:
-        raise ValueError(f"Invalid datetime: {value}")
+        parsed_date = dt_util.parse_date(value)
+        if parsed_date is not None:
+            dt = dt_util.start_of_local_day(parsed_date)
+        else:
+            raise ServiceValidationError(f"Invalid datetime: {value}")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return dt
@@ -49,6 +127,8 @@ def _coerce_dt(value: Any) -> datetime:
         if value.tzinfo is None:
             return value.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
         return dt_util.as_local(value)
+    if isinstance(value, date):
+        return dt_util.start_of_local_day(value)
     return _to_dt(str(value).strip().replace(" ", "T"))
 
 
@@ -71,25 +151,25 @@ def _find_ics_path_for_calendar(hass: HomeAssistant, calendar_entity_id: str) ->
     entity = ent_reg.async_get(calendar_entity_id)
 
     if not entity:
-        raise ValueError(f"Entity not found in registry: {calendar_entity_id}")
+        raise ServiceValidationError(f"Entity not found in registry: {calendar_entity_id}")
 
     if entity.platform != "local_calendar":
-        raise ValueError(f"{calendar_entity_id} is not a Local Calendar entity")
+        raise ServiceValidationError(f"{calendar_entity_id} is not a Local Calendar entity")
 
     if not entity.config_entry_id:
-        raise ValueError(f"{calendar_entity_id} has no config_entry_id")
+        raise ServiceValidationError(f"{calendar_entity_id} has no config_entry_id")
 
     cfg = hass.config_entries.async_get_entry(entity.config_entry_id)
     if not cfg or cfg.domain != "local_calendar":
-        raise ValueError(f"{calendar_entity_id} is not backed by local_calendar config entry")
+        raise ServiceValidationError(f"{calendar_entity_id} is not backed by local_calendar config entry")
 
     storage_key = cfg.data.get("storage_key")
     if not storage_key:
-        raise ValueError(f"Local Calendar config entry has no storage_key: {cfg.entry_id}")
+        raise ServiceValidationError(f"Local Calendar config entry has no storage_key: {cfg.entry_id}")
 
     path = _local_calendar_ics_path(str(storage_key))
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Local Calendar .ics file not found: {path}")
+        raise ServiceValidationError(f"Local Calendar .ics file not found: {path}")
 
     return path
 
@@ -107,15 +187,15 @@ def _load_import_icalendar(raw_ics: str):
 
     ics_text = raw_ics.strip()
     if not ics_text:
-        raise ValueError("ics is required")
+        raise ServiceValidationError("ics is required")
 
     try:
         cal = Calendar.from_ical(ics_text)
     except Exception as err:
-        raise ValueError("Invalid ICS content.") from err
+        raise ServiceValidationError("Invalid ICS content.") from err
 
     if getattr(cal, "name", None) != "VCALENDAR":
-        raise ValueError("ICS content must contain a VCALENDAR.")
+        raise ServiceValidationError("ICS content must contain a VCALENDAR.")
 
     imported_event_uids: set[str] = set()
     imported_events = []
@@ -125,7 +205,7 @@ def _load_import_icalendar(raw_ics: str):
         if component.name == "VTIMEZONE":
             tzid = str(component.get("TZID", "")).strip()
             if not tzid:
-                raise ValueError("Imported VTIMEZONE is missing TZID.")
+                raise ServiceValidationError("Imported VTIMEZONE is missing TZID.")
             imported_timezones.append(component)
             continue
 
@@ -134,34 +214,34 @@ def _load_import_icalendar(raw_ics: str):
 
         uid = str(component.get("UID", "")).strip()
         if not uid:
-            raise ValueError("Each imported event must have a UID.")
+            raise ServiceValidationError("Each imported event must have a UID.")
         if uid in imported_event_uids:
-            raise ValueError(f"Duplicate UID in imported ICS content: {uid}")
+            raise ServiceValidationError(f"Duplicate UID in imported ICS content: {uid}")
 
         dtstart = component.get("DTSTART")
         if dtstart is None:
-            raise ValueError(f"Imported event {uid} is missing DTSTART.")
+            raise ServiceValidationError(f"Imported event {uid} is missing DTSTART.")
 
         start_dt = _dt_from_ical(dtstart)
         if start_dt is None:
-            raise ValueError(f"Imported event {uid} has an invalid DTSTART.")
+            raise ServiceValidationError(f"Imported event {uid} has an invalid DTSTART.")
 
         dtend = component.get("DTEND")
         if dtend is not None:
             start_raw = getattr(dtstart, "dt", dtstart)
             end_raw = getattr(dtend, "dt", dtend)
             if isinstance(start_raw, datetime) != isinstance(end_raw, datetime):
-                raise ValueError(f"Imported event {uid} must use matching DTSTART/DTEND value types.")
+                raise ServiceValidationError(f"Imported event {uid} must use matching DTSTART/DTEND value types.")
 
         end_dt = _event_end_dt(component)
         if end_dt is not None and end_dt <= start_dt:
-            raise ValueError(f"Imported event {uid} must end after it starts.")
+            raise ServiceValidationError(f"Imported event {uid} must end after it starts.")
 
         imported_event_uids.add(uid)
         imported_events.append(component)
 
     if not imported_events:
-        raise ValueError("ICS content must contain at least one VEVENT.")
+        raise ServiceValidationError("ICS content must contain at least one VEVENT.")
 
     return imported_timezones, imported_events, imported_event_uids
 
@@ -220,17 +300,7 @@ def _normalize_summary(s: str | None) -> str | None:
 
 def _uid_from_call_data(data: Mapping[str, Any]) -> str | None:
     """Accept UID from several common keys used by cards/integrations."""
-    for k in (
-        "uid",
-        "UID",
-        "id",
-        "event_id",
-        "eventId",
-        "event_uid",
-        "eventUid",
-        "ical_uid",
-        "icalUid",
-    ):
+    for k in UID_DATA_KEYS:
         v = data.get(k)
         if v:
             return str(v).strip()
@@ -421,13 +491,11 @@ def _register_services(hass: HomeAssistant) -> None:
     async def handle_add(call: ServiceCall) -> None:
         from icalendar import Event, vRecur
 
-        cal_ent = call.data.get("calendar")
-        if not cal_ent:
-            raise ValueError("calendar is required")
+        cal_ent = call.data["calendar"]
 
         summary = (call.data.get("summary") or "").strip()
         if not summary:
-            raise ValueError("summary is required")
+            raise ServiceValidationError("summary is required")
 
         desc = call.data.get("description")
         loc = call.data.get("location")
@@ -435,9 +503,6 @@ def _register_services(hass: HomeAssistant) -> None:
         start_val = call.data.get("start")
         end_val = call.data.get("end")
         rrule_raw = (call.data.get("rrule") or "").strip()
-
-        if start_val is None or end_val is None:
-            raise ValueError("start and end are required")
 
         path = _find_ics_path_for_calendar(hass, cal_ent)
 
@@ -474,6 +539,8 @@ def _register_services(hass: HomeAssistant) -> None:
         else:
             sdt = _coerce_dt(start_val)
             edt = _coerce_dt(end_val)
+            if edt <= sdt:
+                raise ServiceValidationError("end must be after start for non all-day events.")
             ev.add("dtstart", sdt)
             ev.add("dtend", edt)
 
@@ -484,7 +551,7 @@ def _register_services(hass: HomeAssistant) -> None:
             try:
                 ev.add("rrule", vRecur.from_ical(rrule_raw))
             except Exception as e:
-                raise ValueError(f"Invalid RRULE: {rrule_raw}") from e
+                raise ServiceValidationError(f"Invalid RRULE: {rrule_raw}") from e
 
         cal.add_component(ev)
 
@@ -499,6 +566,8 @@ def _register_services(hass: HomeAssistant) -> None:
         summary = call.data.get("summary")
         start_val = call.data.get("start")
         end_val = call.data.get("end")
+        if uid is None and summary is None and start_val is None and end_val is None:
+            raise ServiceValidationError("Delete requires uid, or at least one fallback matcher: summary/start/end.")
 
         start = _coerce_dt(start_val) if start_val is not None else None
         end = _coerce_dt(end_val) if end_val is not None else None
@@ -524,7 +593,9 @@ def _register_services(hass: HomeAssistant) -> None:
             if uid:
                 paths = _ics_paths_containing_uid(str(uid).strip())
                 if not paths:
-                    raise ValueError("No matching event found to delete (UID not found in any local calendar).")
+                    raise ServiceValidationError(
+                        "No matching event found to delete (UID not found in any local calendar)."
+                    )
 
                 deleted_any = False
                 for p in paths:
@@ -551,15 +622,17 @@ def _register_services(hass: HomeAssistant) -> None:
                         deleted_any = True
 
                 if not deleted_any:
-                    raise ValueError("No matching event found to delete (UID search hit files but VEVENT not removed).")
+                    raise ServiceValidationError(
+                        "No matching event found to delete (UID search hit files but VEVENT not removed)."
+                    )
 
                 await _force_refresh_after_edit(hass, cal_ent, path, before_mtime)
                 return
 
-            raise ValueError("No matching event found to delete.")
+            raise ServiceValidationError("No matching event found to delete.")
 
         if removed > 1 and not uid:
-            raise ValueError("Multiple matches found; provide uid to delete precisely.")
+            raise ServiceValidationError("Multiple matches found; provide uid to delete precisely.")
 
         from icalendar import Calendar
 
@@ -588,7 +661,7 @@ def _register_services(hass: HomeAssistant) -> None:
         new_end = _coerce_dt(new_end_val) if new_end_val is not None else None
 
         if not uid:
-            raise ValueError("Update requires uid/id/event_id (a stable identifier).")
+            raise ServiceValidationError("Update requires uid/id/event_id (a stable identifier).")
 
         path = _find_ics_path_for_calendar(hass, cal_ent)
         before_mtime = None
@@ -634,7 +707,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 try:
                     comp["RRULE"] = vRecur.from_ical(rr)
                 except Exception as e:
-                    raise ValueError(f"Invalid RRULE: {rr}") from e
+                    raise ServiceValidationError(f"Invalid RRULE: {rr}") from e
             elif "rrule" in call.data:
                 # Explicitly provided but empty -> remove RRULE
                 try:
@@ -645,16 +718,19 @@ def _register_services(hass: HomeAssistant) -> None:
 
             updated += 1
 
+            updated_start = _dt_from_ical(comp.get("DTSTART"))
+            updated_end = _event_end_dt(comp)
+            if updated_start is not None and updated_end is not None and updated_end <= updated_start:
+                raise ServiceValidationError("Updated event end must be after start.")
+
         if updated == 0:
-            raise ValueError("No matching UID found to update.")
+            raise ServiceValidationError("No matching UID found to update.")
 
         await hass.async_add_executor_job(_write_icalendar_atomic, path, cal)
         await _force_refresh_after_edit(hass, cal_ent, path, before_mtime)
 
     async def handle_list(call: ServiceCall) -> dict[str, Any]:
-        cal_ent = call.data.get("calendar")
-        if not cal_ent:
-            raise ValueError("calendar is required")
+        cal_ent = call.data["calendar"]
 
         start_val = call.data.get("start")
         end_val = call.data.get("end")
@@ -742,7 +818,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
         duplicate_uids = sorted(imported_event_uids & existing_event_uids) if not clear_before_import else []
         if duplicate_uids:
-            raise ValueError(
+            raise ServiceValidationError(
                 "Imported ICS content contains UID values that already exist in the selected calendar: "
                 + ", ".join(duplicate_uids[:5])
                 + ("..." if len(duplicate_uids) > 5 else "")
@@ -764,24 +840,28 @@ def _register_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(
         DOMAIN,
-        "add_event",
-        handle_add,
+        "list_events",
+        handle_list,
+        schema=LIST_EVENTS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,
-        "delete_event",
-        handle_delete,
+        "add_event",
+        handle_add,
+        schema=ADD_EVENT_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,
         "update_event",
         handle_update,
+        schema=UPDATE_EVENT_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,
-        "list_events",
-        handle_list,
-        supports_response=SupportsResponse.ONLY,
+        "delete_event",
+        handle_delete,
+        schema=DELETE_EVENT_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,

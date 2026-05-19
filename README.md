@@ -20,10 +20,10 @@ This integration resolves the file path via the Local Calendar config entry `sto
 
 ## Features
 
+- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
 - ✅ **Add events** to a Local Calendar (`ics_calendar_tools.add_event`)
 - ✅ **Update/edit events** (title/time/details) (`ics_calendar_tools.update_event`)
 - ✅ **Delete events** reliably (UID-based) (`ics_calendar_tools.delete_event`)
-- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
 - ✅ **Import events** from pasted ICS content (`ics_calendar_tools.import_events`)
 - ✅ **RRULE repeat support** for Local Calendar events (writes true recurring rules into the `.ics`)
 - ✅ Automatically refreshes Local Calendar after changes (no manual restart)
@@ -64,6 +64,36 @@ After that, you should see services under:
 - For **all-day** events, most calendar systems treat `DTEND` as **exclusive**.  
   Example: a one-day all-day event on `2026-02-08` should use end `2026-02-09`.
 - **Update/Delete require a UID**. The UID is the `UID:` value inside the `.ics` VEVENT. Your UI (Week Planner Card Plus) should pass the UID of the clicked event.
+
+---
+
+### `ics_calendar_tools.list_events`
+
+List events from a Local Calendar `.ics` file and return their details (including `uid`).
+
+**Fields**
+- `calendar` (required): Local Calendar entity id
+- `start` (optional): only include events that overlap this datetime/date
+- `end` (optional): only include events that start before this datetime/date
+- `limit` (optional): max number of events to return
+
+**Response**
+- `calendar`
+- `count`
+- `events[]` with `uid`, `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+
+**Example**
+```yaml
+service: ics_calendar_tools.list_events
+target:
+  entity_id: calendar.family_calendar
+data:
+  calendar: calendar.family_calendar
+  start: "2026-01-01T00:00:00"
+  end: "2026-12-31T23:59:59"
+  limit: 200
+response_variable: calendar_events
+```
 
 ---
 
@@ -119,7 +149,7 @@ Update an existing event (by UID).
 - `calendar` (required): Local Calendar entity id
 - `uid` (required): UID of the VEVENT to update
 - Any of the following (optional):  
-  `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+  `summary`, `start`, `end`, `description`, `location`, `rrule`
 
 **Example (change time + add/update RRULE)**
 ```yaml
@@ -128,9 +158,8 @@ data:
   calendar: calendar.family_calendar
   uid: "3eb61f28-8213-11f0-b1f8-0242ac110008"
   summary: Test Repeat Weekly (updated)
-  all_day: true
-  start: "2026-02-08"
-  end: "2026-02-09"
+  start: "2026-02-08T09:00:00"
+  end: "2026-02-08T10:00:00"
   rrule: "FREQ=WEEKLY;INTERVAL=1"
 ```
 
@@ -147,11 +176,14 @@ data:
 
 ### `ics_calendar_tools.delete_event`
 
-Delete an event (by UID).
+Delete an event by UID (preferred) or by fallback matchers.
 
 **Fields**
 - `calendar` (required): Local Calendar entity id
-- `uid` (required): UID of the VEVENT to delete
+- `uid` (preferred): UID of the VEVENT to delete
+- fallback matchers (optional): `summary`, `start`, `end`
+
+> Safety check: provide at least `uid` or one fallback matcher (`summary`, `start`, `end`).
 
 **Example**
 ```yaml
@@ -159,36 +191,6 @@ service: ics_calendar_tools.delete_event
 data:
   calendar: calendar.family_calendar
   uid: "3eb61f28-8213-11f0-b1f8-0242ac110008"
-```
-
----
-
-### `ics_calendar_tools.list_events`
-
-List events from a Local Calendar `.ics` file and return their details (including `uid`).
-
-**Fields**
-- `calendar` (required): Local Calendar entity id
-- `start` (optional): only include events that overlap this datetime/date
-- `end` (optional): only include events that start before this datetime/date
-- `limit` (optional): max number of events to return
-
-**Response**
-- `calendar`
-- `count`
-- `events[]` with `uid`, `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
-
-**Example**
-```yaml
-service: ics_calendar_tools.list_events
-target:
-  entity_id: calendar.family_calendar
-data:
-  calendar: calendar.family_calendar
-  start: "2026-01-01T00:00:00"
-  end: "2026-12-31T23:59:59"
-  limit: 200
-response_variable: calendar_events
 ```
 
 ---
