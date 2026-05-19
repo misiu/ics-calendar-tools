@@ -227,18 +227,18 @@ def _load_import_icalendar(raw_ics: str):
         if uid in imported_event_uids:
             raise ServiceValidationError(f"Duplicate UID in imported ICS content: {uid}")
 
-        dtstart = component.get("DTSTART")
-        if dtstart is None:
+        dtstart_prop = component.get("DTSTART")
+        if dtstart_prop is None:
             raise ServiceValidationError(f"Imported event {uid} is missing DTSTART.")
 
-        start_dt = _dt_from_ical(dtstart)
+        start_dt = _dt_from_ical(dtstart_prop)
         if start_dt is None:
             raise ServiceValidationError(f"Imported event {uid} has an invalid DTSTART.")
 
-        dtend = component.get("DTEND")
-        if dtend is not None:
-            start_raw = getattr(dtstart, "dt", dtstart)
-            end_raw = getattr(dtend, "dt", dtend)
+        dtend_prop = component.get("DTEND")
+        if dtend_prop is not None:
+            start_raw = _ical_property_value(dtstart_prop)
+            end_raw = _ical_property_value(dtend_prop)
             if isinstance(start_raw, datetime) != isinstance(end_raw, datetime):
                 raise ServiceValidationError(f"Imported event {uid} must use matching DTSTART/DTEND value types.")
 
@@ -316,11 +316,16 @@ def _uid_from_call_data(data: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _ical_property_value(value: Any) -> Any:
+    """Return raw value from iCalendar property wrapper."""
+    return getattr(value, "dt", value)
+
+
 def _dt_from_ical(value) -> datetime | None:
     """Convert DTSTART/DTEND's .dt (date or datetime) to datetime (local)."""
     if value is None:
         return None
-    v = getattr(value, "dt", value)
+    v = _ical_property_value(value)
     if isinstance(v, datetime):
         return dt_util.as_local(v)
     # date -> treat as local start of day
@@ -353,7 +358,7 @@ def _iso_ical_value(value) -> str | None:
     """Convert iCalendar date/datetime values to ISO strings."""
     if value is None:
         return None
-    v = getattr(value, "dt", value)
+    v = _ical_property_value(value)
     if isinstance(v, datetime):
         return dt_util.as_local(v).isoformat()
     if isinstance(v, date):
