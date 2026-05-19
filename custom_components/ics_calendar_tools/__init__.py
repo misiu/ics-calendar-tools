@@ -34,6 +34,15 @@ UID_DATA_KEYS = (
     "icalUid",
 )
 
+
+def _non_empty_string(value: Any) -> str:
+    """Validate string input and reject whitespace-only values."""
+    text = cv.string(value).strip()
+    if not text:
+        raise vol.Invalid("Value cannot be empty.")
+    return text
+
+
 LIST_EVENTS_SCHEMA = vol.Schema(
     {
         vol.Required("calendar"): cv.entity_id,
@@ -46,7 +55,7 @@ LIST_EVENTS_SCHEMA = vol.Schema(
 ADD_EVENT_SCHEMA = vol.Schema(
     {
         vol.Required("calendar"): cv.entity_id,
-        vol.Required("summary"): vol.All(cv.string, vol.Length(min=1)),
+        vol.Required("summary"): _non_empty_string,
         vol.Required("all_day"): cv.boolean,
         vol.Required("start"): DATE_OR_DATETIME_OR_STRING,
         vol.Required("end"): DATE_OR_DATETIME_OR_STRING,
@@ -68,7 +77,7 @@ DELETE_EVENT_SCHEMA = vol.Schema(
         vol.Optional("eventUid"): cv.string,
         vol.Optional("ical_uid"): cv.string,
         vol.Optional("icalUid"): cv.string,
-        vol.Optional("summary"): vol.All(cv.string, vol.Length(min=1)),
+        vol.Optional("summary"): _non_empty_string,
         vol.Optional("start"): DATE_OR_DATETIME_OR_STRING,
         vol.Optional("end"): DATE_OR_DATETIME_OR_STRING,
     }
@@ -529,12 +538,11 @@ def _register_services(hass: HomeAssistant) -> None:
             sdt = _coerce_date(start_val)
             edt = _coerce_date(end_val)
             ev.add("dtstart", sdt)
-            # If UI gives an inclusive end date (often equal to start), convert to exclusive end (+1 day)
-            try:
-                if edt <= sdt:
-                    edt = sdt + timedelta(days=1)
-            except Exception:
-                pass
+            if edt < sdt:
+                raise ServiceValidationError("end must be on or after start for all-day events.")
+            # If UI gives an inclusive end date equal to start, convert to exclusive end (+1 day).
+            if edt == sdt:
+                edt = sdt + timedelta(days=1)
             ev.add("dtend", edt)
         else:
             sdt = _coerce_dt(start_val)
