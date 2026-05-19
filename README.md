@@ -1,6 +1,6 @@
 # ICS Calendar Tools (Home Assistant) — v2.1.0
 
-**ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, and delete events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
+**ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, delete, list, and import events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
 
 This was built to work especially well with **Week Planner Card Plus** (Skylight-style family calendar dashboards), where you want reliable event editing and fast UI refresh.
 
@@ -24,6 +24,7 @@ This integration resolves the file path via the Local Calendar config entry `sto
 - ✅ **Update/edit events** (title/time/details) (`ics_calendar_tools.update_event`)
 - ✅ **Delete events** reliably (UID-based) (`ics_calendar_tools.delete_event`)
 - ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
+- ✅ **Import events** from pasted ICS content (`ics_calendar_tools.import_events`)
 - ✅ **RRULE repeat support** for Local Calendar events (writes true recurring rules into the `.ics`)
 - ✅ Automatically refreshes Local Calendar after changes (no manual restart)
 - ✅ Supports multiple Local Calendar entities
@@ -188,6 +189,40 @@ data:
   end: "2026-12-31T23:59:59"
   limit: 200
 response_variable: calendar_events
+```
+
+### `ics_calendar_tools.import_events`
+
+Validate pasted ICS content and import its events into a Local Calendar `.ics` file.
+
+**Fields**
+- `calendar` (required): Local Calendar entity id
+- `ics` (required): full ICS file content to import
+- `clear_before_import` (optional): `true/false`; when `true`, all existing events are removed before the import
+
+**Validation**
+- The selected entity must be backed by Home Assistant **Local Calendar**
+- The pasted content must parse as a valid `VCALENDAR`
+- The ICS content must contain at least one `VEVENT`
+- Every imported event must have a unique `UID` and valid `DTSTART`
+- Imported `UID` values must not already exist in the selected calendar unless `clear_before_import` is enabled
+
+**Example**
+```yaml
+service: ics_calendar_tools.import_events
+data:
+  calendar: calendar.family_calendar
+  clear_before_import: true
+  ics: |
+    BEGIN:VCALENDAR
+    VERSION:2.0
+    BEGIN:VEVENT
+    UID:example-1@example
+    DTSTART;VALUE=DATE:20260519
+    DTEND;VALUE=DATE:20260520
+    SUMMARY:Imported Event
+    END:VEVENT
+    END:VCALENDAR
 ```
 
 ---

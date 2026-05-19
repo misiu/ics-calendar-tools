@@ -8,8 +8,9 @@ import tempfile
 from datetime import date, datetime, timedelta
 from typing import Any, Mapping
 
+import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -19,6 +20,14 @@ _LOGGER = logging.getLogger(__name__)
 LOCAL_CALENDAR_STORAGE_PATH = "/config/.storage"
 LOCAL_CALENDAR_PREFIX = "local_calendar."
 ICS_EXTENSION = ".ics"
+
+IMPORT_EVENTS_SCHEMA = vol.Schema(
+    {
+        vol.Required("calendar"): cv.entity_id,
+        vol.Required("ics"): cv.string,
+        vol.Optional("clear_before_import", default=False): cv.boolean,
+    }
+)
 
 
 def _local_calendar_ics_path(slug: str) -> str:
@@ -91,6 +100,70 @@ def _load_icalendar(path: str):
     with open(path, "rb") as f:
         data = f.read()
     return Calendar.from_ical(data)
+
+
+def _load_import_icalendar(raw_ics: str):
+    from icalendar import Calendar
+
+    ics_text = raw_ics.strip()
+    if not ics_text:
+        raise ValueError("ics is required")
+
+    try:
+        cal = Calendar.from_ical(ics_text)
+    except Exception as err:
+        raise ValueError("Invalid ICS content.") from err
+
+    if getattr(cal, "name", None) != "VCALENDAR":
+        raise ValueError("ICS content must contain a VCALENDAR.")
+
+    imported_event_uids: set[str] = set()
+    imported_events = []
+    imported_timezones = []
+
+    for component in cal.subcomponents:
+        if component.name == "VTIMEZONE":
+            tzid = str(component.get("TZID", "")).strip()
+            if not tzid:
+                raise ValueError("Imported VTIMEZONE is missing TZID.")
+            imported_timezones.append(component)
+            continue
+
+        if component.name != "VEVENT":
+            continue
+
+        uid = str(component.get("UID", "")).strip()
+        if not uid:
+            raise ValueError("Each imported event must have a UID.")
+        if uid in imported_event_uids:
+            raise ValueError(f"Duplicate UID in imported ICS content: {uid}")
+
+        dtstart = component.get("DTSTART")
+        if dtstart is None:
+            raise ValueError(f"Imported event {uid} is missing DTSTART.")
+
+        start_dt = _dt_from_ical(dtstart)
+        if start_dt is None:
+            raise ValueError(f"Imported event {uid} has an invalid DTSTART.")
+
+        dtend = component.get("DTEND")
+        if dtend is not None:
+            start_raw = getattr(dtstart, "dt", dtstart)
+            end_raw = getattr(dtend, "dt", dtend)
+            if isinstance(start_raw, datetime) != isinstance(end_raw, datetime):
+                raise ValueError(f"Imported event {uid} must use matching DTSTART/DTEND value types.")
+
+        end_dt = _event_end_dt(component)
+        if end_dt is not None and end_dt <= start_dt:
+            raise ValueError(f"Imported event {uid} must end after it starts.")
+
+        imported_event_uids.add(uid)
+        imported_events.append(component)
+
+    if not imported_events:
+        raise ValueError("ICS content must contain at least one VEVENT.")
+
+    return imported_timezones, imported_events, imported_event_uids
 
 
 def _write_icalendar_atomic(path: str, cal) -> None:
@@ -278,6 +351,14 @@ def _ics_paths_containing_uid(uid: str) -> list[str]:
         except Exception:
             continue
     return matches
+
+
+def _component_tzid(component) -> str | None:
+    tzid = component.get("TZID")
+    if not tzid:
+        return None
+    tzid_str = str(tzid).strip()
+    return tzid_str or None
 
 
 async def _wait_for_mtime_change(path: str, before: float | None, timeout_s: float = 2.0) -> None:
@@ -619,6 +700,68 @@ def _register_services(hass: HomeAssistant) -> None:
 
         return {"calendar": cal_ent, "count": len(events), "events": events}
 
+    async def handle_import(call: ServiceCall) -> None:
+        cal_ent = call.data["calendar"]
+        clear_before_import = bool(call.data.get("clear_before_import", False))
+        raw_ics = call.data["ics"]
+
+        path = _find_ics_path_for_calendar(hass, cal_ent)
+        before_mtime = None
+        try:
+            before_mtime = os.path.getmtime(path)
+        except Exception:
+            pass
+
+        imported_timezones, imported_events, imported_event_uids = await hass.async_add_executor_job(
+            _load_import_icalendar, raw_ics
+        )
+        cal = await hass.async_add_executor_job(_load_icalendar, path)
+
+        from icalendar import Calendar
+
+        new_cal = Calendar()
+        for key, value in cal.items():
+            new_cal.add(key, value)
+
+        existing_event_uids: set[str] = set()
+        existing_timezones: set[str] = set()
+
+        for component in cal.subcomponents:
+            if component.name == "VEVENT":
+                existing_uid = str(component.get("UID", "")).strip()
+                if existing_uid:
+                    existing_event_uids.add(existing_uid)
+                if clear_before_import:
+                    continue
+            elif component.name == "VTIMEZONE":
+                tzid = _component_tzid(component)
+                if tzid:
+                    existing_timezones.add(tzid)
+
+            new_cal.add_component(component)
+
+        duplicate_uids = sorted(imported_event_uids & existing_event_uids) if not clear_before_import else []
+        if duplicate_uids:
+            raise ValueError(
+                "Imported ICS content contains UID values that already exist in the selected calendar: "
+                + ", ".join(duplicate_uids[:5])
+                + ("..." if len(duplicate_uids) > 5 else "")
+            )
+
+        for component in imported_timezones:
+            tzid = _component_tzid(component)
+            if tzid and tzid in existing_timezones:
+                continue
+            new_cal.add_component(component)
+            if tzid:
+                existing_timezones.add(tzid)
+
+        for component in imported_events:
+            new_cal.add_component(component)
+
+        await hass.async_add_executor_job(_write_icalendar_atomic, path, new_cal)
+        await _force_refresh_after_edit(hass, cal_ent, path, before_mtime)
+
     hass.services.async_register(
         DOMAIN,
         "add_event",
@@ -639,6 +782,12 @@ def _register_services(hass: HomeAssistant) -> None:
         "list_events",
         handle_list,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "import_events",
+        handle_import,
+        schema=IMPORT_EVENTS_SCHEMA,
     )
 
 
