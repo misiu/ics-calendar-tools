@@ -1,6 +1,6 @@
 # ICS Calendar Tools (Home Assistant) — v2.1.0
 
-**ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, and delete events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
+**ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, delete, list, and import events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
 
 This was built to work especially well with **Week Planner Card Plus** (Skylight-style family calendar dashboards), where you want reliable event editing and fast UI refresh.
 
@@ -20,10 +20,11 @@ This integration resolves the file path via the Local Calendar config entry `sto
 
 ## Features
 
+- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
 - ✅ **Add events** to a Local Calendar (`ics_calendar_tools.add_event`)
 - ✅ **Update/edit events** (title/time/details) (`ics_calendar_tools.update_event`)
 - ✅ **Delete events** reliably (UID-based) (`ics_calendar_tools.delete_event`)
-- ✅ **List events** (including UID) for scripting (`ics_calendar_tools.list_events`)
+- ✅ **Import events** from pasted ICS content (`ics_calendar_tools.import_events`)
 - ✅ **RRULE repeat support** for Local Calendar events (writes true recurring rules into the `.ics`)
 - ✅ Automatically refreshes Local Calendar after changes (no manual restart)
 - ✅ Supports multiple Local Calendar entities
@@ -63,6 +64,36 @@ After that, you should see services under:
 - For **all-day** events, most calendar systems treat `DTEND` as **exclusive**.  
   Example: a one-day all-day event on `2026-02-08` should use end `2026-02-09`.
 - **Update/Delete require a UID**. The UID is the `UID:` value inside the `.ics` VEVENT. Your UI (Week Planner Card Plus) should pass the UID of the clicked event.
+
+---
+
+### `ics_calendar_tools.list_events`
+
+List events from a Local Calendar `.ics` file and return their details (including `uid`).
+
+**Fields**
+- `calendar` (required): Local Calendar entity id
+- `start` (optional): only include events that overlap this datetime/date
+- `end` (optional): only include events that start before this datetime/date
+- `limit` (optional): max number of events to return
+
+**Response**
+- `calendar`
+- `count`
+- `events[]` with `uid`, `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+
+**Example**
+```yaml
+service: ics_calendar_tools.list_events
+target:
+  entity_id: calendar.family_calendar
+data:
+  calendar: calendar.family_calendar
+  start: "2026-01-01T00:00:00"
+  end: "2026-12-31T23:59:59"
+  limit: 200
+response_variable: calendar_events
+```
 
 ---
 
@@ -118,7 +149,7 @@ Update an existing event (by UID).
 - `calendar` (required): Local Calendar entity id
 - `uid` (required): UID of the VEVENT to update
 - Any of the following (optional):  
-  `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+  `summary`, `start`, `end`, `description`, `location`, `rrule`
 
 **Example (change time + add/update RRULE)**
 ```yaml
@@ -127,9 +158,8 @@ data:
   calendar: calendar.family_calendar
   uid: "3eb61f28-8213-11f0-b1f8-0242ac110008"
   summary: Test Repeat Weekly (updated)
-  all_day: true
-  start: "2026-02-08"
-  end: "2026-02-09"
+  start: "2026-02-08T09:00:00"
+  end: "2026-02-08T10:00:00"
   rrule: "FREQ=WEEKLY;INTERVAL=1"
 ```
 
@@ -146,11 +176,14 @@ data:
 
 ### `ics_calendar_tools.delete_event`
 
-Delete an event (by UID).
+Delete an event by UID (preferred) or by fallback matchers.
 
 **Fields**
 - `calendar` (required): Local Calendar entity id
-- `uid` (required): UID of the VEVENT to delete
+- `uid` (preferred): UID of the VEVENT to delete
+- fallback matchers (optional): `summary`, `start`, `end`
+
+> Safety check: provide at least `uid` or one fallback matcher (`summary`, `start`, `end`).
 
 **Example**
 ```yaml
@@ -162,32 +195,38 @@ data:
 
 ---
 
-### `ics_calendar_tools.list_events`
+### `ics_calendar_tools.import_events`
 
-List events from a Local Calendar `.ics` file and return their details (including `uid`).
+Validate pasted ICS content and import its events into a Local Calendar `.ics` file.
 
 **Fields**
 - `calendar` (required): Local Calendar entity id
-- `start` (optional): only include events that overlap this datetime/date
-- `end` (optional): only include events that start before this datetime/date
-- `limit` (optional): max number of events to return
+- `ics` (required): full ICS file content to import
+- `clear_before_import` (optional): `true/false`; when `true`, all existing events are removed before the import
 
-**Response**
-- `calendar`
-- `count`
-- `events[]` with `uid`, `summary`, `start`, `end`, `all_day`, `description`, `location`, `rrule`
+**Validation**
+- The selected entity must be backed by Home Assistant **Local Calendar**
+- The pasted content must parse as a valid `VCALENDAR`
+- The ICS content must contain at least one `VEVENT`
+- Every imported event must have a unique `UID` and valid `DTSTART`
+- Imported `UID` values must not already exist in the selected calendar unless `clear_before_import` is enabled
 
 **Example**
 ```yaml
-service: ics_calendar_tools.list_events
-target:
-  entity_id: calendar.family_calendar
+service: ics_calendar_tools.import_events
 data:
   calendar: calendar.family_calendar
-  start: "2026-01-01T00:00:00"
-  end: "2026-12-31T23:59:59"
-  limit: 200
-response_variable: calendar_events
+  clear_before_import: true
+  ics: |
+    BEGIN:VCALENDAR
+    VERSION:2.0
+    BEGIN:VEVENT
+    UID:example-1@example
+    DTSTART;VALUE=DATE:20260519
+    DTEND;VALUE=DATE:20260520
+    SUMMARY:Imported Event
+    END:VEVENT
+    END:VCALENDAR
 ```
 
 ---
