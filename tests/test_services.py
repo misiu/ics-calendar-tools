@@ -2,20 +2,17 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from icalendar import Calendar
 import pytest
-
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-
+from icalendar import Calendar
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ics_calendar_tools import __init__ as services
+import custom_components.ics_calendar_tools as services
 from custom_components.ics_calendar_tools.const import DOMAIN
-
 
 LOCAL_CALENDAR_DOMAIN = "local_calendar"
 CALENDAR_ENTITY_ID = "calendar.family"
@@ -136,19 +133,23 @@ async def test_list_events_returns_response(
         ),
     )
 
-    response = await hass.services.async_call(
-        DOMAIN,
-        "list_events",
-        {"calendar": CALENDAR_ENTITY_ID, "limit": 10},
-        blocking=True,
-        return_response=True,
+    response = cast(
+        dict[str, Any],
+        await hass.services.async_call(
+            DOMAIN,
+            "list_events",
+            {"calendar": CALENDAR_ENTITY_ID, "limit": 10},
+            blocking=True,
+            return_response=True,
+        ),
     )
+    events = cast(list[dict[str, Any]], response["events"])
 
     assert response["calendar"] == CALENDAR_ENTITY_ID
     assert response["count"] == 2
-    assert [event["uid"] for event in response["events"]] == ["all-day", "timed"]
-    assert response["events"][0]["all_day"] is True
-    assert response["events"][0]["start"] == "2026-05-20"
+    assert [event["uid"] for event in events] == ["all-day", "timed"]
+    assert events[0]["all_day"] is True
+    assert events[0]["start"] == "2026-05-20"
 
 
 async def test_add_event_writes_all_day_event_with_rrule(

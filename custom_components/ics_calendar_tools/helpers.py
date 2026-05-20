@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta
-from typing import Any, Mapping
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
@@ -144,7 +145,13 @@ def _is_all_day_component(component: Any) -> bool:
     return isinstance(start_raw, date) and not isinstance(start_raw, datetime)
 
 
-def _match_event(component: Any, uid: str | None, summary: str | None, start: datetime | None, end: datetime | None) -> bool:
+def _match_event(
+    component: Any,
+    uid: str | None,
+    summary: str | None,
+    start: datetime | None,
+    end: datetime | None,
+) -> bool:
     if component.name != "VEVENT":
         return False
 
@@ -152,9 +159,10 @@ def _match_event(component: Any, uid: str | None, summary: str | None, start: da
         ev_uid = str(component.get("UID", "")).strip()
         return ev_uid == uid
 
-    if summary is not None:
-        if _normalize_summary(str(component.get("SUMMARY", ""))) != _normalize_summary(summary):
-            return False
+    if summary is not None and _normalize_summary(
+        str(component.get("SUMMARY", ""))
+    ) != _normalize_summary(summary):
+        return False
 
     if start is not None:
         ev_start_dt = _dt_from_ical(component.get("DTSTART"))

@@ -3,7 +3,6 @@ from __future__ import annotations
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ics_calendar_tools.const import DOMAIN

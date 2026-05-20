@@ -11,13 +11,13 @@ SERVICE_DELETE_EVENT = "delete_event"
 SERVICE_IMPORT_EVENTS = "import_events"
 
 UID_DATA_KEYS = (
-	"uid",
-	"UID",
-	"id",
-	"event_id",
-	"eventId",
-	"event_uid",
-	"eventUid",
-	"ical_uid",
-	"icalUid",
+    "uid",
+    "UID",
+    "id",
+    "event_id",
+    "eventId",
+    "event_uid",
+    "eventUid",
+    "ical_uid",
+    "icalUid",
 )
