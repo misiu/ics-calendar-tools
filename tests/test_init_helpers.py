@@ -4,7 +4,6 @@ from datetime import date
 
 import pytest
 import voluptuous as vol
-
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.ics_calendar_tools import helpers
