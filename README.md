@@ -248,3 +248,32 @@ Thanks to [@Misiu](https://github.com/Misiu) for [PR #3](https://github.com/rand
   This integration triggers a Local Calendar refresh after writing, but the UI may still cache. Try a browser refresh, or confirm the `.ics` file contents actually changed.
 - **Wrong dates for all-day events:**  
   Remember `end` is exclusive for all-day events (one-day all-day requires end = next day).
+
+---
+
+## Development (Dev Container)
+
+This repository includes a VS Code Dev Container setup for local development with Docker Desktop.
+
+### Prerequisites
+
+- Docker Desktop
+- VS Code
+- Dev Containers extension
+
+### Start
+
+1. Open this repository in VS Code
+2. Run: **Dev Containers: Reopen in Container**
+3. Wait for the post-create step to install dependencies from `requirements-dev.txt`
+
+### Common commands inside the container
+
+```bash
+pytest -q
+mypy custom_components tests
+isort custom_components tests
+black custom_components tests
+```
+
+The container uses Python 3.14 to match Home Assistant standards.
