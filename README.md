@@ -202,21 +202,21 @@ Validate pasted ICS content and import its events into a Local Calendar `.ics` f
 **Fields**
 - `calendar` (required): Local Calendar entity id
 - `ics` (required): full ICS file content to import
-- `clear_before_import` (optional): `true/false`; when `true`, all existing events are removed before the import
+- `clear_target_calendar` (optional): `true/false`; when `true`, all existing events are removed from the target calendar before the import (useful for replacing old/expired events, e.g. trash pickup schedules)
 
 **Validation**
 - The selected entity must be backed by Home Assistant **Local Calendar**
 - The pasted content must parse as a valid `VCALENDAR`
 - The ICS content must contain at least one `VEVENT`
 - Every imported event must have a unique `UID` and valid `DTSTART`
-- Imported `UID` values must not already exist in the selected calendar unless `clear_before_import` is enabled
+- Imported `UID` values must not already exist in the selected calendar unless `clear_target_calendar` is enabled
 
 **Example**
 ```yaml
 service: ics_calendar_tools.import_events
 data:
   calendar: calendar.family_calendar
-  clear_before_import: true
+  clear_target_calendar: true
   ics: |
     BEGIN:VCALENDAR
     VERSION:2.0
@@ -228,6 +228,28 @@ data:
     END:VEVENT
     END:VCALENDAR
 ```
+
+---
+
+## Edge Cases & Validation
+
+### All-day events with time 00:00:00
+
+Some calendar tools export all-day events as `DTSTART:YYYYMMDDT000000` (with time at midnight) instead of `DTSTART;VALUE=DATE:YYYYMMDD`.
+
+- By default, these are interpreted as timed events (not all-day) by the icalendar library and Home Assistant.
+- If you want to treat such events as all-day, you must add logic to convert events where the time is exactly 00:00:00 and the duration is 24h to all-day events.
+- This integration currently follows the Home Assistant/icalendar default: `DTSTART:YYYYMMDDT000000` is a timed event.
+
+### Import validation
+
+- When importing ICS data, the integration validates:
+  - The ICS parses as a valid VCALENDAR
+  - At least one VEVENT is present
+  - Each event has a unique UID and valid DTSTART
+  - No duplicate UIDs (unless `clear_target_calendar` is set)
+  - If the ICS is invalid or missing required fields, the import will fail and no events will be written
+- This protects against user errors and malformed ICS files pasted into the import service.
 
 ---
 

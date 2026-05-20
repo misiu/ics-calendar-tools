@@ -304,7 +304,7 @@ async def test_import_events_rejects_duplicate_uid_without_writing(
     assert [str(event.get("UID")) for event in _events(path)] == ["existing"]
 
 
-async def test_import_events_clear_before_import_replaces_events(
+async def test_import_events_clear_target_calendar_replaces_events(
     hass: HomeAssistant,
     setup_integration: None,
 ) -> None:
@@ -317,7 +317,7 @@ async def test_import_events_clear_before_import_replaces_events(
         "import_events",
         {
             "calendar": CALENDAR_ENTITY_ID,
-            "clear_before_import": True,
+            "clear_target_calendar": True,
             "ics": "\n".join(
                 [
                     "BEGIN:VCALENDAR",
@@ -361,3 +361,80 @@ async def test_local_calendar_path_is_under_ha_config_dir(
 
     assert resolved == expected
     assert str(resolved).startswith(hass.config.config_dir)
+
+
+async def test_import_all_day_event_with_time_zero(
+    hass: HomeAssistant, setup_integration: None
+) -> None:
+    """Import event with DTSTART/DTEND as date+T000000 and treat as all-day."""
+    path = _add_local_calendar(hass)
+    ics = """
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:allday-timezero
+DTSTART:20260520T000000
+DTEND:20260521T000000
+SUMMARY:All-day with time zero
+END:VEVENT
+END:VCALENDAR
+"""
+    await hass.services.async_call(
+        DOMAIN,
+        "import_events",
+        {"calendar": CALENDAR_ENTITY_ID, "ics": ics},
+        blocking=True,
+    )
+    event = _event_by_uid(path, "allday-timezero")
+    # Should be interpreted as all-day
+    assert event.get("DTSTART").dt == date(2026, 5, 20)
+    assert event.get("DTEND").dt == date(2026, 5, 21)
+
+
+async def test_import_invalid_ics_data(hass: HomeAssistant, setup_integration: None) -> None:
+    """Import should fail gracefully on invalid ICS data."""
+    path = _add_local_calendar(hass)
+    bad_ics = """
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:bad
+DTSTART:NOTADATE
+SUMMARY:Broken
+END:VEVENT
+END:VCALENDAR
+"""
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "import_events",
+            {"calendar": CALENDAR_ENTITY_ID, "ics": bad_ics},
+            blocking=True,
+        )
+    # Calendar should remain empty
+    assert _events(path) == []
+
+
+async def test_import_large_ics_file(hass: HomeAssistant, setup_integration: None) -> None:
+    """Import a large ICS file and check stability and count."""
+    path = _add_local_calendar(hass)
+    events = [
+        f"""BEGIN:VEVENT\nUID:bulk{i}\nDTSTART:202605{i % 28 + 1:02d}T120000\n"
+        f"DTEND:202605{i % 28 + 1:02d}T130000\nSUMMARY:Event {i}\nEND:VEVENT"""
+        for i in range(1000)
+    ]
+    ics = "\n".join(
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            *events,
+            "END:VCALENDAR",
+        ]
+    )
+    await hass.services.async_call(
+        DOMAIN,
+        "import_events",
+        {"calendar": CALENDAR_ENTITY_ID, "ics": ics},
+        blocking=True,
+    )
+    assert len(_events(path)) == 1000
