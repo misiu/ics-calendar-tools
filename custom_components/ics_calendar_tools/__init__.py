@@ -155,6 +155,27 @@ def _load_import_icalendar(raw_ics: str):
         if end_dt is not None and end_dt <= start_dt:
             raise ServiceValidationError(f"Imported event {uid} must end after it starts.")
 
+        # All-day 00:00:00 logic: if DTSTART and DTEND are both at 00:00:00
+        # and duration is 24h, treat as all-day
+        end_dt_val = _dt_from_ical(dtend_prop) if dtend_prop is not None else None
+        if isinstance(start_dt, datetime) and isinstance(end_dt_val, datetime):
+            start_time = start_dt.time()
+            end_time = end_dt_val.time()
+            duration = end_dt_val - start_dt
+            if (
+                start_time == end_time == datetime.min.time()
+                and duration.days == 1
+                and duration.seconds == 0
+            ):
+                # Convert to all-day (date only) and set VALUE=DATE param
+                from icalendar import vDate
+
+                all_day_start = date(start_dt.year, start_dt.month, start_dt.day)
+                all_day_end = date(end_dt_val.year, end_dt_val.month, end_dt_val.day)
+                component["DTSTART"] = vDate(all_day_start)
+                component["DTEND"] = vDate(all_day_end)
+                component["DTSTART"].params["VALUE"] = "DATE"
+                component["DTEND"].params["VALUE"] = "DATE"
         imported_event_uids.add(uid)
         imported_events.append(component)
 
@@ -565,7 +586,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_import(call: ServiceCall) -> None:
         cal_ent = call.data["calendar"]
-        clear_before_import = bool(call.data.get("clear_before_import", False))
+        clear_target_calendar = bool(call.data.get("clear_target_calendar", False))
         raw_ics = call.data["ics"]
 
         path = await _find_ics_path_for_calendar(hass, cal_ent)
@@ -594,7 +615,7 @@ def _register_services(hass: HomeAssistant) -> None:
                     existing_uid = str(component.get("UID", "")).strip()
                     if existing_uid:
                         existing_event_uids.add(existing_uid)
-                    if clear_before_import:
+                    if clear_target_calendar:
                         continue
                 elif component.name == "VTIMEZONE":
                     tzid = _component_tzid(component)
@@ -604,7 +625,9 @@ def _register_services(hass: HomeAssistant) -> None:
                 new_cal.add_component(component)
 
             duplicate_uids = (
-                sorted(imported_event_uids & existing_event_uids) if not clear_before_import else []
+                sorted(imported_event_uids & existing_event_uids)
+                if not clear_target_calendar
+                else []
             )
             if duplicate_uids:
                 raise ServiceValidationError(

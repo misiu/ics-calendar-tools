@@ -56,6 +56,35 @@ After that, you should see services under:
 
 ---
 
+## Development (Dev Container)
+
+This repository includes a VS Code Dev Container setup for local development with Docker Desktop.
+
+### Prerequisites
+
+- Docker Desktop
+- VS Code
+- Dev Containers extension
+
+### Start
+
+1. Open this repository in VS Code
+2. Run: **Dev Containers: Reopen in Container**
+3. Wait for the post-create step to install dependencies from `requirements-dev.txt`
+
+### Common commands inside the container
+
+```bash
+pytest -q
+mypy custom_components tests
+isort custom_components tests
+black custom_components tests
+```
+
+The container uses Python 3.14 to match Home Assistant standards.
+
+---
+
 ## Services
 
 ### Notes (important)
@@ -228,6 +257,26 @@ data:
     END:VEVENT
     END:VCALENDAR
 ```
+
+---
+
+## Edge Cases & Validation
+
+### All-day events with time 00:00:00
+
+Some calendar tools export all-day events as `DTSTART:YYYYMMDDT000000` (with time at midnight) instead of `DTSTART;VALUE=DATE:YYYYMMDD`.
+
+- By default, these are interpreted as timed events (not all-day) by the icalendar library and Home Assistant.
+- This integration automatically converts events with `DTSTART` and `DTEND` at 00:00:00 and duration exactly 24h to all-day events for maximum compatibility.
+
+### Import validation
+
+- When importing ICS data, the integration validates:
+  - The ICS parses as a valid VCALENDAR
+  - At least one VEVENT is present
+  - Each event (in the resulting calendar) must have a unique UID. If `clear_target_calendar` is not set, imported UIDs must not conflict with existing UIDs. If `clear_target_calendar` is set, only the imported events must be unique among themselves (the calendar is cleared before import).
+  - If the ICS is invalid or missing required fields, the import will fail and no events will be written
+- This protects against user errors and malformed ICS files pasted into the import service.
 
 ---
 
