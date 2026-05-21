@@ -192,6 +192,17 @@ response_variable: calendar_events
 
 ---
 
+## v2.1.0 (May 2026)
+
+Thanks to [@Misiu](https://github.com/Misiu) for [PR #3](https://github.com/randrcomputers/ics-calendar-tools/pull/3), which closes [#1](https://github.com/randrcomputers/ics-calendar-tools/issues/1):
+
+- `ics_calendar_tools.list_events` — return UIDs and event details for automations
+- Reliable `.ics` path lookup via Local Calendar `storage_key`
+- Datetime selectors in the services UI
+- Integration icons (`brand/icon.png`)
+
+---
+
 ## Troubleshooting
 
 - **I don’t see the services:**  
