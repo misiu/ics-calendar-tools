@@ -8,12 +8,12 @@ This was built to work especially well with **Week Planner Card Plus** (Skylight
 
 ## What this integration is (and is not)
 
-✅ Works with **Local Calendar** entities (backed by a file like:  
+✅ Works with **Local Calendar** entities (backed by a file like:
 `/config/.storage/local_calendar.<name>.ics`)
 
 This integration resolves the file path via the Local Calendar config entry `storage_key` (entity registry), so edits are always mapped to the correct `.ics` file.
 
-❌ Does **not** directly create/edit recurring series on **Google calendar entities** (Google calendars are not `.ics` files on disk).  
+❌ Does **not** directly create/edit recurring series on **Google calendar entities** (Google calendars are not `.ics` files on disk).
 > Note: Your dashboard/card can still support Google recurring series via Home Assistant’s WebSocket calendar API — but that is separate from this integration’s file-based approach.
 
 ---
@@ -43,15 +43,15 @@ This integration resolves the file path via the Local Calendar config entry `sto
 
 1. Open **HACS** → **Integrations**
 2. Click the **3 dots** (top right) → **Custom repositories**
-3. Add this repository URL:  
-   `https://github.com/randrcomputers/ics-calendar-tools`  
+3. Add this repository URL:
+   `https://github.com/randrcomputers/ics-calendar-tools`
    and choose category **Integration**
 4. Install **ICS Calendar Tools**
 5. Restart Home Assistant
 6. Go to **Settings → Devices & services → Add integration**
 7. Add **ICS Calendar Tools**
 
-After that, you should see services under:  
+After that, you should see services under:
 **Developer Tools → Actions / Services**
 
 ---
@@ -61,7 +61,7 @@ After that, you should see services under:
 ### Notes (important)
 
 - `rrule` uses standard RFC5545 recurrence rules (example: `FREQ=WEEKLY;BYDAY=MO,WE`).
-- For **all-day** events, most calendar systems treat `DTEND` as **exclusive**.  
+- For **all-day** events, most calendar systems treat `DTEND` as **exclusive**.
   Example: a one-day all-day event on `2026-02-08` should use end `2026-02-09`.
 - **Update/Delete require a UID**. The UID is the `UID:` value inside the `.ics` VEVENT. Your UI (Week Planner Card Plus) should pass the UID of the clicked event.
 
@@ -111,7 +111,7 @@ Add an event to a Local Calendar `.ics` file.
 - `location` (optional)
 - `rrule` (optional): e.g. `"FREQ=WEEKLY;INTERVAL=1;COUNT=5"`
 
-> All-day note: Most calendar systems treat `DTEND` as **exclusive** for all-day events.  
+> All-day note: Most calendar systems treat `DTEND` as **exclusive** for all-day events.
 > For a one-day all-day event on `2026-02-08`, use end `2026-02-09`.
 
 **Example (weekly all-day repeat, 5 occurrences)**
@@ -148,7 +148,7 @@ Update an existing event (by UID).
 **Fields**
 - `calendar` (required): Local Calendar entity id
 - `uid` (required): UID of the VEVENT to update
-- Any of the following (optional):  
+- Any of the following (optional):
   `summary`, `start`, `end`, `description`, `location`, `rrule`
 
 **Example (change time + add/update RRULE)**
@@ -253,11 +253,11 @@ Thanks to [@Misiu](https://github.com/Misiu) for [PR #3](https://github.com/rand
 
 ## Troubleshooting
 
-- **I don’t see the services:**  
+- **I don’t see the services:**
   Confirm the integration is installed, then restart Home Assistant. After restart, look under **Developer Tools → Actions / Services**.
-- **Edits don’t appear immediately:**  
+- **Edits don’t appear immediately:**
   This integration triggers a Local Calendar refresh after writing, but the UI may still cache. Try a browser refresh, or confirm the `.ics` file contents actually changed.
-- **Wrong dates for all-day events:**  
+- **Wrong dates for all-day events:**
   Remember `end` is exclusive for all-day events (one-day all-day requires end = next day).
 
 ---
