@@ -1,4 +1,4 @@
-# ICS Calendar Tools (Home Assistant) — v2.1.0
+# ICS Calendar Tools (Home Assistant) — v2.2.0
 
 **ICS Calendar Tools** is a Home Assistant custom integration that lets you **add, update, delete, list, and import events** in **Local Calendar (.ics)** entities by **editing the underlying `.ics` file** and then triggering a Local Calendar refresh so changes appear without restarting Home Assistant.
 
@@ -53,35 +53,6 @@ This integration resolves the file path via the Local Calendar config entry `sto
 
 After that, you should see services under:
 **Developer Tools → Actions / Services**
-
----
-
-## Development (Dev Container)
-
-This repository includes a VS Code Dev Container setup for local development with Docker Desktop.
-
-### Prerequisites
-
-- Docker Desktop
-- VS Code
-- Dev Containers extension
-
-### Start
-
-1. Open this repository in VS Code
-2. Run: **Dev Containers: Reopen in Container**
-3. Wait for the post-create step to install dependencies from `requirements-dev.txt`
-
-### Common commands inside the container
-
-```bash
-pytest -q
-mypy custom_components tests
-isort custom_components tests
-black custom_components tests
-```
-
-The container uses Python 3.14 to match Home Assistant standards.
 
 ---
 
@@ -222,8 +193,6 @@ data:
   uid: "3eb61f28-8213-11f0-b1f8-0242ac110008"
 ```
 
----
-
 ### `ics_calendar_tools.import_events`
 
 Validate pasted ICS content and import its events into a Local Calendar `.ics` file.
@@ -231,21 +200,21 @@ Validate pasted ICS content and import its events into a Local Calendar `.ics` f
 **Fields**
 - `calendar` (required): Local Calendar entity id
 - `ics` (required): full ICS file content to import
-- `clear_before_import` (optional): `true/false`; when `true`, all existing events are removed before the import
+- `clear_existing_events` (optional): `true/false`; when `true`, existing events in the selected calendar are removed before import
 
 **Validation**
 - The selected entity must be backed by Home Assistant **Local Calendar**
 - The pasted content must parse as a valid `VCALENDAR`
 - The ICS content must contain at least one `VEVENT`
 - Every imported event must have a unique `UID` and valid `DTSTART`
-- Imported `UID` values must not already exist in the selected calendar unless `clear_before_import` is enabled
+- Imported `UID` values must not already exist in the selected calendar unless `clear_existing_events` is enabled
 
 **Example**
 ```yaml
 service: ics_calendar_tools.import_events
 data:
   calendar: calendar.family_calendar
-  clear_before_import: true
+  clear_existing_events: true
   ics: |
     BEGIN:VCALENDAR
     VERSION:2.0
@@ -260,23 +229,14 @@ data:
 
 ---
 
-## Edge Cases & Validation
+## v2.1.0 (May 2026)
 
-### All-day events with time 00:00:00
+Thanks to [@Misiu](https://github.com/Misiu) for [PR #3](https://github.com/randrcomputers/ics-calendar-tools/pull/3), which closes [#1](https://github.com/randrcomputers/ics-calendar-tools/issues/1):
 
-Some calendar tools export all-day events as `DTSTART:YYYYMMDDT000000` (with time at midnight) instead of `DTSTART;VALUE=DATE:YYYYMMDD`.
-
-- By default, these are interpreted as timed events (not all-day) by the icalendar library and Home Assistant.
-- This integration automatically converts events with `DTSTART` and `DTEND` at 00:00:00 and duration exactly 24h to all-day events for maximum compatibility.
-
-### Import validation
-
-- When importing ICS data, the integration validates:
-  - The ICS parses as a valid VCALENDAR
-  - At least one VEVENT is present
-  - Each event (in the resulting calendar) must have a unique UID. If `clear_target_calendar` is not set, imported UIDs must not conflict with existing UIDs. If `clear_target_calendar` is set, only the imported events must be unique among themselves (the calendar is cleared before import).
-  - If the ICS is invalid or missing required fields, the import will fail and no events will be written
-- This protects against user errors and malformed ICS files pasted into the import service.
+- `ics_calendar_tools.list_events` — return UIDs and event details for automations
+- Reliable `.ics` path lookup via Local Calendar `storage_key`
+- Datetime selectors in the services UI
+- Integration icons (`brand/icon.png`)
 
 ---
 
@@ -288,3 +248,32 @@ Some calendar tools export all-day events as `DTSTART:YYYYMMDDT000000` (with tim
   This integration triggers a Local Calendar refresh after writing, but the UI may still cache. Try a browser refresh, or confirm the `.ics` file contents actually changed.
 - **Wrong dates for all-day events:**
   Remember `end` is exclusive for all-day events (one-day all-day requires end = next day).
+
+---
+
+## Development (Dev Container)
+
+This repository includes a VS Code Dev Container setup for local development with Docker Desktop.
+
+### Prerequisites
+
+- Docker Desktop
+- VS Code
+- Dev Containers extension
+
+### Start
+
+1. Open this repository in VS Code
+2. Run: **Dev Containers: Reopen in Container**
+3. Wait for the post-create step to install dependencies from `requirements-dev.txt`
+
+### Common commands inside the container
+
+```bash
+pytest -q
+mypy custom_components tests
+isort custom_components tests
+black custom_components tests
+```
+
+The container uses Python 3.14 to match Home Assistant standards.

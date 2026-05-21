@@ -304,7 +304,7 @@ async def test_import_events_rejects_duplicate_uid_without_writing(
     assert [str(event.get("UID")) for event in _events(path)] == ["existing"]
 
 
-async def test_import_events_clear_target_calendar_replaces_events(
+async def test_import_events_clear_existing_events_replaces_events(
     hass: HomeAssistant,
     setup_integration: None,
 ) -> None:
@@ -317,7 +317,7 @@ async def test_import_events_clear_target_calendar_replaces_events(
         "import_events",
         {
             "calendar": CALENDAR_ENTITY_ID,
-            "clear_target_calendar": True,
+            "clear_existing_events": True,
             "ics": "\n".join(
                 [
                     "BEGIN:VCALENDAR",

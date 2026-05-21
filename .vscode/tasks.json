@@ -21,9 +21,6 @@
         "mypy",
         "custom_components",
         "tests"
-      ],
-      "problemMatcher": [
-        "$mypy"
       ]
     },
     {

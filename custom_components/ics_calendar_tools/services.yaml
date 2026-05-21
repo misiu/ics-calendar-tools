@@ -156,8 +156,8 @@ import_events:
       selector:
         text:
           multiline: true
-    clear_before_import:
-      name: Clear before import
+    clear_existing_events:
+      name: Clear existing events
       required: false
       default: false
       selector:

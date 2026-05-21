@@ -586,7 +586,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_import(call: ServiceCall) -> None:
         cal_ent = call.data["calendar"]
-        clear_target_calendar = bool(call.data.get("clear_target_calendar", False))
+        clear_existing_events = bool(call.data.get("clear_existing_events", False))
         raw_ics = call.data["ics"]
 
         path = await _find_ics_path_for_calendar(hass, cal_ent)
@@ -615,7 +615,7 @@ def _register_services(hass: HomeAssistant) -> None:
                     existing_uid = str(component.get("UID", "")).strip()
                     if existing_uid:
                         existing_event_uids.add(existing_uid)
-                    if clear_target_calendar:
+                    if clear_existing_events:
                         continue
                 elif component.name == "VTIMEZONE":
                     tzid = _component_tzid(component)
@@ -626,7 +626,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
             duplicate_uids = (
                 sorted(imported_event_uids & existing_event_uids)
-                if not clear_target_calendar
+                if not clear_existing_events
                 else []
             )
             if duplicate_uids:

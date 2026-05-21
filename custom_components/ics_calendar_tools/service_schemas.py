@@ -74,6 +74,6 @@ IMPORT_EVENTS_SCHEMA = vol.Schema(
     {
         vol.Required("calendar"): cv.entity_id,
         vol.Required("ics"): vol.All(cv.string, vol.Length(min=1)),
-        vol.Optional("clear_target_calendar", default=False): cv.boolean,
+        vol.Optional("clear_existing_events", default=False): cv.boolean,
     }
 )

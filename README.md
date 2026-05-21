@@ -200,21 +200,21 @@ Validate pasted ICS content and import its events into a Local Calendar `.ics` f
 **Fields**
 - `calendar` (required): Local Calendar entity id
 - `ics` (required): full ICS file content to import
-- `clear_before_import` (optional): `true/false`; when `true`, all existing events are removed before the import
+- `clear_existing_events` (optional): `true/false`; when `true`, existing events in the selected calendar are removed before import
 
 **Validation**
 - The selected entity must be backed by Home Assistant **Local Calendar**
 - The pasted content must parse as a valid `VCALENDAR`
 - The ICS content must contain at least one `VEVENT`
 - Every imported event must have a unique `UID` and valid `DTSTART`
-- Imported `UID` values must not already exist in the selected calendar unless `clear_before_import` is enabled
+- Imported `UID` values must not already exist in the selected calendar unless `clear_existing_events` is enabled
 
 **Example**
 ```yaml
 service: ics_calendar_tools.import_events
 data:
   calendar: calendar.family_calendar
-  clear_before_import: true
+  clear_existing_events: true
   ics: |
     BEGIN:VCALENDAR
     VERSION:2.0
@@ -226,17 +226,6 @@ data:
     END:VEVENT
     END:VCALENDAR
 ```
-
----
-
-## v2.1.0 (May 2026)
-
-Thanks to [@Misiu](https://github.com/Misiu) for [PR #3](https://github.com/randrcomputers/ics-calendar-tools/pull/3), which closes [#1](https://github.com/randrcomputers/ics-calendar-tools/issues/1):
-
-- `ics_calendar_tools.list_events` — return UIDs and event details for automations
-- Reliable `.ics` path lookup via Local Calendar `storage_key`
-- Datetime selectors in the services UI
-- Integration icons (`brand/icon.png`)
 
 ---
 

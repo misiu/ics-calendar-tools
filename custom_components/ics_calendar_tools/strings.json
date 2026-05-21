@@ -148,8 +148,8 @@
           "name": "ICS file content",
           "description": "Full ICS file content to import."
         },
-        "clear_before_import": {
-          "name": "Clear before import",
+        "clear_existing_events": {
+          "name": "Clear existing events",
           "description": "Remove existing events before importing."
         }
       }
